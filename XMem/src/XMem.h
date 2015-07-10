@@ -59,6 +59,8 @@ public:
   uint16_t heapFree(void); // report heap avail.
 	uint16_t heapUnAllocated(void); // size of block between top of heap and current highest allocated
 	uint16_t heapMaxFree(void); // size of largest block available on heap.
+	void setWait( uint8_t wait); // 0..3 call before Init() to set memory waitstates. Defaults to 0
+	void setHighHeap(bool hi); // call before init() to use page 64+ as heap 
 private:
   uint8_t _panes[7]; // current pane to page mapping, pane1 .. pane7
   uint8_t _frozen; // highest pane that is frozen as HEAP, Default 0 (internal RAM) 
@@ -71,5 +73,6 @@ private:
 	void    disable(); // shutdown hardware
 	void    initVars(); // enable hardware
   heapState _h;
+	uint8_t _flags; // waitStates and High Heap
 };
 #endif

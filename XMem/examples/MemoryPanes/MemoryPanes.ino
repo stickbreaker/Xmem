@@ -288,6 +288,11 @@ char getch( const char choice[]){
 return ch;
 }
 
+char getch(const char msg[], const char choice[]){
+Serial.print(msg);
+return getch(choice);
+}
+
 void continous(){
 Serial.print("\n Continous Test until Failure or keypress\n");
 Serial.print(" M - Manufacturing \n H - Heap");
@@ -429,13 +434,13 @@ struct MEMUSER * m;
 if(msg)printLink("run head=",&head);
 m=head.px; // first of chain
 uint16_t xcnt=0,xsz=0;
-while((m)&&(xcnt<head.count)){
+while((m)&&(xcnt<head.count)&&result){
 	result=result && checkLink(m,head,msg);
   xcnt++;
 	xsz += m->sz;
   m=m->nx;
 	}
-if(m){
+if(m&&result){
 	result=false;
 	if(msg){
 		Serial.print("too long forward\n");
@@ -531,16 +536,23 @@ if(msg){
 }
 if(m&&n){
 	if((m->nx==n)||(n->px=m)){
-		if(m->nx==n) n->px=m;
-		if(n->px=m) m->nx=n;
+		if(m->nx==n) {
+			Serial.print("fixing n->px\n");
+			n->px=m;
+		  }
+		if(n->px==m){
+			Serial.print("fixing m->nx\n");
+			m->nx=n;
+			}
 		if(msg){
-			printLink(" fixed m=",m);
-			printLink(" fixed n=",n);
+			printLink(" fixed m->nx =",m);
+			printLink(" fixed n->px ",n);
 			}
 		}
 	else {
 		success = false;
 		if(msg){
+			Serial.print(" double broken\n");
 			printLink(" failed m=",m);
 			printLink(" failed n=",m);
 			}
@@ -549,6 +561,7 @@ if(m&&n){
 else {
 	success = false;
 	if(msg){
+		Serial.print(" NULL link\n");
 		printLink(" failed m=",m);
 		printLink(" failed n=",m);
 		}
@@ -620,7 +633,8 @@ if(msg){
 done=false;	
 while((head.count > 0)&& result&&!done){
   if(!runLinks(head,false)){
-		fixBrokenLinks(head,true);
+		if(msg)runLinks(head,true);
+	  fixBrokenLinks(head,true);
 		if(msg)runLinks(head,true);
 	  }
   size = random(head.count); // number of hops to run down
@@ -741,6 +755,29 @@ uint16_t paneResult[7];
 uint8_t win[7];
 uint8_t er=0;
 win[0]=64;
+uint8_t minpane =0;
+X.getWindow(win);
+while((minpane<7)&&(X.setPane(minpane+1,win[minpane])))minpane++;
+if (minpane>6) {
+	if(errormsgs) Serial.print(" All Panes Frozen to heap");
+	return 1;
+}
+if((minpane>0)&&(errormsgs)){
+	Serial.print(" Frozen panes, only using ");
+	Serial.print(minpane+1,DEC);
+	Serial.print(" .. 7\n");
+}
+
+if(errormsgs){
+	switch(mode){
+		case 0 : Serial.print(" Byte Write/Read\n");
+		  break;
+		case 1: Serial.print(" Word Write/Byte Read\n");
+		  break;
+		case 2: Serial.print(" Long Write/Byte Read\n");
+		default :;
+	}
+}
 
 for(uint8_t i=0;i<129;i++){
   pageResult[i]=0;
@@ -752,15 +789,16 @@ for(uint8_t j = 0;j<128;j++){ // Write to all windows
   if((j&63)==0)
     if(errormsgs)Serial.println();
   if(errormsgs)Serial.print('W');
-  for(uint8_t i=1;i<7;i++){
+  for(uint8_t i=minpane;i<7;i++){
     win[i] = (i+j)%128;
     }
-  if(win[0]==64) win[0]=0;
-  else win[0]=64;  
-  
+	if(minpane==0){
+    if(win[0]==64) win[0]=0;
+    else win[0]=64;  
+	  }
   er = X.setWindow(win);
   if (er==0) {
-    for(uint8_t i=0;i<7;i++){
+    for(uint8_t i=minpane;i<7;i++){
       uint8_t * ptr = (uint8_t *)X.paneToAddr(i+1);
       switch(mode){
 		case 0 :fillRamBytes(ptr,win[i],false);
@@ -784,14 +822,16 @@ for(uint8_t j = 0;j<128;j++){ // read from all windows
     if((j&63)==0)Serial.println();
     Serial.print('R');
     }
-  for(uint8_t i=1;i<7;i++){
+  for(uint8_t i=minpane;i<7;i++){
     win[i] = (i+j)%128;
     }
-  if(win[0]==64) win[0]=0;
-  else win[0]=64;  
+	if(minpane==0){
+    if(win[0]==64) win[0]=0;
+    else win[0]=64;
+		}
   er = X.setWindow(win);
   if (er==0) {
-    for(uint8_t i=0;i<7;i++){
+    for(uint8_t i=minpane;i<7;i++){
       uint8_t * ptr = (uint8_t *)X.paneToAddr(i+1);
       do{
         if(*ptr++!=(uint8_t)win[i]){ 
@@ -800,7 +840,7 @@ for(uint8_t j = 0;j<128;j++){ // read from all windows
             Serial.print((uint16_t)(ptr-1),HEX);
             Serial.print(" 0x");Serial.print(*(ptr-1),HEX);
             Serial.print(" != 0x");Serial.println(win[i],HEX);
-            Serial.print("pane =");Serial.print(i,DEC);Serial.print(" page=");
+            Serial.print("pane =");Serial.print((i+1),DEC);Serial.print(" page=");
             Serial.println((uint8_t)win[i],DEC);
             }
           pageResult[win[i]]++;
@@ -942,12 +982,13 @@ if (Serial.available()){
        setPage();
        break;
     case 'M' : 
-		   Serial.println("MFG Test ");
 			 eatSerial();
 			 if(Serial.available()){
 				ch=Serial.read();
+				Serial.print(ch);
 				}
 			else ch='0';
+			Serial.print("\nMFG Test ");
 			switch(ch){
 				case '2' : res=mfgTest(2,true);
 				  break;
@@ -1013,11 +1054,31 @@ if (Serial.available()){
 
 void loop(){
 uint8_t win[7],err;
-Serial.print(" heapsize (0..7)\n>");
-char ch=getch("0123456789\n\r");
+uint8_t heapsize=0;
+char ch=getch(" heapsize (0..7)\n> ","0123456789\n\r");
 if((ch>=48)&&(ch<=57)){
-	Serial.print("initing XMEM=");
-	err=X.init(SS,0x27,ch-48);
+	heapsize = ch-48;
+	Serial.print(ch);
+	eatSerial();
+	if(heapsize>0){
+		ch=getch("\nHigh Heap(y,n)\n> ","YN\n\r");
+		if(ch=='Y'){
+			Serial.print("Selecting High Heap\n");
+			X.setHighHeap(true);
+			}
+		else 	X.setHighHeap(false);
+		eatSerial();
+		}
+  ch=getch("\nWait States (0,1,2,3)\n> ","0123\n\r");
+	if((ch>='1')&&(ch<='3')){
+		Serial.print("\nSelected ");Serial.print(ch);
+		Serial.print(" waitStates\n");
+		X.setWait(ch-48);
+	}
+	else X.setWait(0);
+			
+	Serial.print("\niniting XMEM=");
+	err=X.init(SS,0x27,heapsize);
 	Serial.println(err,DEC);
 	if (err==0){
 		for(err=0;err<7;err++){

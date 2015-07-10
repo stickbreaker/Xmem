@@ -14,6 +14,7 @@ error Codes:
 
 XMem::XMem(void){   //constructor
 initVars();
+_flags=0;
 }
 
 XMem::~XMem(void){ //destructor
@@ -48,7 +49,17 @@ if(_CS){
 initVars(); // init variables
 XMCRA=0; // disable External Memory;  
 }	
+void XMem::setWait(uint8_t wait){ // call before init to set wait states
+_flags = (_flags &0xFC)|(wait &3);
+}	
 
+void XMem::setHighHeap(bool hi){ 
+/* call before init to set to use pages 64++ for heap
+   defaults to use pages 0++ for heap
+	 */
+_flags = (_flags &0xFB);
+if(hi) _flags = _flags | 4;
+}
 
 uint8_t XMem::init(uint8_t CS,uint8_t SPIAddr,uint8_t highestFrozenPane){ // 0..7, 8k pages used for heap
   // 0 means heap stays in internal mem
@@ -87,7 +98,9 @@ if(_CS){
      // no default in pane 1
   uint8_t i=0;
   while(i<(_frozen&7)){
-    setRam(i+1,fixPage(i)); //map pages to panes for heap, enable HW if needed.
+		if(_flags&4) setRam(i+1,fixPage(i+64)); // pages 64+ as heap
+		else setRam(i+1,fixPage(i)); // pages 0+ as heap
+		//map pages to panes for heap, enable HW if needed.
   	i++;
     }
   if((_frozen&7)>0){ // heap in xmem
@@ -110,7 +123,7 @@ if(_CS){
     }
   }
 XMCRB=0x00; // all 64k 
-XMCRA=B10000101; // enable Xmem,   //1 wait states.
+XMCRA=B10000000 | ((_flags&3) << 2)| (_flags&3);// enable Xmem, waitstates.
 return 0;
 }
 
