@@ -1,0 +1,10 @@
+XMem KEYWORD1
+
+init KEYWORD2
+setPane KEYWORD2
+pushPane KEYWORD2
+popPane KEYWORD2
+setWindow KEYWORD2
+getWindow KEYWORD2
+paneToAddr KEYWORD2
+heapFree KEYWORD2
