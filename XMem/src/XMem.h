@@ -61,6 +61,11 @@ public:
 	uint16_t heapMaxFree(void); // size of largest block available on heap.
 	void setWait( uint8_t wait); // 0..3 call before Init() to set memory waitstates. Defaults to 0
 	void setHighHeap(bool hi); // call before init() to use page 64+ as heap 
+	uint8_t MCP23S17_read_byte(uint8_t cs, uint8_t spiaddr, uint8_t addr);
+	uint8_t MCP23S17_write_byte(uint8_t cs, uint8_t spiaddr, uint8_t addr, uint8_t din);
+	uint8_t MCP23S17_write_word(uint8_t cs, uint8_t spiaddr, uint8_t addr, uint16_t din);
+	uint8_t MCP23S17_write_block(uint8_t cs, uint8_t spiaddr, uint8_t addr, char * din, uint8_t len);
+	uint8_t MCP23S17_init(uint8_t cs, uint8_t spiaddr, uint16_t iodir, uint16_t initval, bool sequential);
 private:
   uint8_t _panes[7]; // current pane to page mapping, pane1 .. pane7
   uint8_t _frozen; // highest pane that is frozen as HEAP, Default 0 (internal RAM) 
@@ -72,6 +77,7 @@ private:
   uint8_t unFixPage(uint8_t);; //convert from internal Format to logical page (0..127,255) or 254=error
 	void    disable(); // shutdown hardware
 	void    initVars(); // enable hardware
+	
   heapState _h;
 	uint8_t _flags; // waitStates and High Heap
 };

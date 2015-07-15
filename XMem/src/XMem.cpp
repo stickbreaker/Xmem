@@ -9,7 +9,7 @@ error Codes:
  
  */
 
-#include <my_spi.h>
+#include <SPI.h>
 #include <XMem.h>
 
 XMem::XMem(void){   //constructor
@@ -42,8 +42,8 @@ if(_frozen&7){// heap in external ram
   }
 // Disable Paging hardware
 if(_CS){
-  SPI.MCP23S17_write_word(_CS,_Addr,0x12,0xFFFF); //load latches with 255
-  SPI.MCP23S17_write_byte(_CS,_Addr,0x13,0xC0);      // latch it, Disable Default
+  MCP23S17_write_word(_CS,_Addr,0x12,0xFFFF); //load latches with 255
+  MCP23S17_write_byte(_CS,_Addr,0x13,0xC0);      // latch it, Disable Default
   _CS=0;
   }
 initVars(); // init variables
@@ -85,16 +85,16 @@ if(_CS){
   digitalWrite(_CS,HIGH);
   pinMode(_CS,OUTPUT);
   SPI.begin();
-  uint8_t er= SPI.MCP23S17_init(_CS,_Addr,0,0xFFFF,true); //
+  uint8_t er= MCP23S17_init(_CS,_Addr,0,0xFFFF,true); //
 	if(!er){
-		er = !((SPI.MCP23S17_read_byte(_CS,_Addr,0x12)==0xff)&&(SPI.MCP23S17_read_byte(_CS,_Addr,0x13)==0xff));
+		er = !((MCP23S17_read_byte(_CS,_Addr,0x12)==0xff)&&(MCP23S17_read_byte(_CS,_Addr,0x13)==0xff));
 	}
   if(er){
 //    Serial.print("MCP Init Failed=");Serial.println(er,DEC);Serial.flush();delay(1000);
     _CS=0;
     return 5;
     }
-  SPI.MCP23S17_write_byte(_CS,_Addr,0x13,0xC0);// Latch 0xff into all latches
+  MCP23S17_write_byte(_CS,_Addr,0x13,0xC0);// Latch 0xff into all latches
      // no default in pane 1
   uint8_t i=0;
   while(i<(_frozen&7)){
@@ -254,13 +254,13 @@ if((pane<8)&&(pane>1)){
   if((inpage&0xC0)==0) return 2; // invalid page, can't have both CS's Low at the same time!
   _panes[pane-1]=inpage;
   uint8_t sel=_BV(pane-2) | _panes[0]; // set latch high and keep default for pane 1 active.
-  SPI.MCP23S17_write_byte(_CS,_Addr,0x13,sel); //select latch
-  SPI.MCP23S17_write_byte(_CS,_Addr,0x12,inpage); //load value
+  MCP23S17_write_byte(_CS,_Addr,0x13,sel); //select latch
+  MCP23S17_write_byte(_CS,_Addr,0x12,inpage); //load value
  // sprintf(ch,"strobe sel=%X",(uint8_t)sel);
  // Serial.println(ch);Serial.flush();
 //  sel=((_frozen&0x10)>>4); // flag to enable 3:8 decoder hardware
   sel = _panes[0];
-  SPI.MCP23S17_write_byte(_CS,_Addr,0x13,sel); // latch it
+  MCP23S17_write_byte(_CS,_Addr,0x13,sel); // latch it
 //  sprintf(ch,"sel=%X",(uint8_t)sel);
 //  Serial.println(ch);
 //  Serial.flush();
@@ -274,7 +274,7 @@ else if(pane==1){
   else if(inpage==0xFF) _panes[0] = 0xC0; // default to nothing, buss floats
   else return 2; // invalid page for pane 1;
   uint8_t sel=_panes[0];
-  SPI.MCP23S17_write_byte(_CS,_Addr,0x13,sel);
+  MCP23S17_write_byte(_CS,_Addr,0x13,sel);
 //  sprintf(ch,"sel=%X",(uint8_t)sel);
 //  Serial.println(ch);
 //  Serial.flush();
@@ -327,4 +327,83 @@ uint16_t XMem::heapFree(){ // sum of all heap, including freelist
 	return v;
 }
 
+uint8_t XMem::MCP23S17_write_byte(uint8_t cs, uint8_t spiaddr, uint8_t addr,uint8_t din){
+spiaddr &= 0x27;
+spiaddr = (spiaddr <<1); // write
+digitalWrite(cs,LOW);
+uint8_t x;
+x=SPI.transfer(spiaddr);
+x=SPI.transfer(addr);
+x=SPI.transfer(din);
+digitalWrite(cs,HIGH);
+return 1; //bytes transfered
+}
+
+uint8_t XMem::MCP23S17_write_word(uint8_t cs, uint8_t spiaddr, uint8_t addr,uint16_t din){
+spiaddr &= 0x27;
+spiaddr = (spiaddr <<1); // write
+digitalWrite(cs,LOW);
+SPI.transfer(spiaddr);
+SPI.transfer(addr);
+SPI.transfer(lowByte(din));
+SPI.transfer(highByte(din));
+digitalWrite(cs,HIGH);
+return 2; //bytes transfered
+}
+
+uint8_t XMem::MCP23S17_write_block(uint8_t cs,uint8_t spiaddr, uint8_t addr, char * din, uint8_t len){
+spiaddr =(spiaddr&0x27)<<1; // write
+digitalWrite(cs,LOW);
+SPI.transfer(spiaddr);
+SPI.transfer(addr);
+for(uint8_t i=0;i<len;i++){
+  SPI.transfer(din[i]);
+  }
+digitalWrite(cs,HIGH);
+return len;
+}
  
+uint8_t XMem::MCP23S17_init(uint8_t cs, uint8_t spiaddr, uint16_t iodir, uint16_t initval, bool sequential){
+// cs = arduino pin for CS
+// addr =  Address of chip
+// iodir = io direction for pins, 1 for input, 0 for output (byte)
+// initvalue = initial value for GPIO
+// interrupts disabled, OC, Active Low, Pullups off
+// returns 0 = success;
+//         1 = data too large for buffer
+//         2 = NACK during addresses
+//         3 = NACK during DATA
+//         4 = Other error
+//         254 = No Response from Device, Device not Present
+//         255 = invalid address
+
+uint8_t success = 255; // unknown error
+  if(spiaddr<0x20||spiaddr>0x27) return success; // out of possible Address range
+  if(MCP23S17_write_byte(cs,spiaddr,0x0A,12)!=1)return 254;
+  // Controller, Configuration Register,(hardware address enable, Sequencial, INT OC, INT Active Low)
+  // sequential int the complete chip.
+  char ch[20]={0xff,0xff,0,0,0,0,0,0,0,0,12,12,0,0,0,0,0,0,0,0};
+  ch[18]=(char)(initval&0xff);
+  ch[19]=(char)((initval>>8)&0xff);
+  success=MCP23S17_write_block(cs,spiaddr,0,ch,20);
+  // Now set the Pin Directions and change to NON-Sequencial access (every register must be explicitly addressed)
+  if(success!=20) return 4; // error out
+  else success=0;
+  if(MCP23S17_write_word(cs,spiaddr,0,iodir)!=2) return 254; //  Controller,IO direction,defaults to all input
+  if(sequential) return success; // don't need to change to no sequencial access
+  if(MCP23S17_write_byte(cs,spiaddr,0xA,0x2C)!=1) return 254; // Controller,configuration register.[NON-Sequencial access, INT OC, INT Active Low]
+
+  return success;
+}
+
+uint8_t XMem::MCP23S17_read_byte(uint8_t cs, uint8_t spiaddr, uint8_t addr){
+spiaddr &= 0x27;
+spiaddr = (spiaddr <<1) +1; // read
+uint8_t x;
+digitalWrite(cs,LOW);
+x=SPI.transfer(spiaddr);
+x=SPI.transfer(addr);
+x=SPI.transfer(0);
+digitalWrite(cs,HIGH);
+return x;
+}

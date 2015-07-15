@@ -1,6 +1,5 @@
 #include <XMem.h>
-#include <my_spi.h>
-
+#include <SPI.h>
 XMem X;
 uint16_t mfgTest(uint8_t mode,bool errormsgs); // forward
 
@@ -41,7 +40,7 @@ Serial.print(' ');
 }
 void readExpander(){
 for(uint8_t i=0;i<0x16;i++){
-  uint8_t b=SPI.MCP23S17_read_byte  (SS, 0x27, i);
+  uint8_t b=X.MCP23S17_read_byte  (SS, 0x27, i);
   if((i&0x7)==0){
     if(i<16) Serial.print("\n0");
     else Serial.println();
@@ -272,6 +271,7 @@ if (er){
   Serial.println(er,HEX);
 }
 }
+
 char getch( const char choice[]){
   bool done = false;
   char ch;
@@ -303,6 +303,7 @@ Serial.print(ch);
 uint16_t res=0;
 uint8_t mode=2;
 bool success = true;
+unsigned long time=millis();
 unsigned long count=0;
 switch(ch){
   case 'M' : eatSerial();
@@ -314,7 +315,11 @@ switch(ch){
 			res = mfgTest(mode,false);
       count ++;
       if(res>0){
-        Serial.print("Test failed after ");
+				Serial.print("Elapsed time=");
+				time = millis()-time;
+				time = time / 60000;
+				Serial.print(time);Serial.print(" Minutes\n");
+				Serial.print("Test failed after ");
         Serial.print(count,DEC);
         Serial.println(" iterations\n Enter to Continue");
         getch("\n\r");
@@ -729,8 +734,10 @@ void stat(){
   }
   Serial.print("Panes : ");
   for (uint8_t i=0;i<7;i++){
+		if(X.setPane(i+1,win[i])) Serial.print('*');
+			else Serial.print(' ');
     Serial.print((uint8_t)(i+1),DEC);
-    Serial.print("   ");
+    Serial.print("  ");
   }
  
   Serial.print("\nPages :");
@@ -790,7 +797,16 @@ for(uint8_t j = 0;j<128;j++){ // Write to all windows
     if(errormsgs)Serial.println();
   if(errormsgs)Serial.print('W');
   for(uint8_t i=minpane;i<7;i++){
-    win[i] = (i+j)%128;
+		er=(i+j)%128;
+		uint8_t ii=0;
+		while(ii<minpane){
+			if(er==win[ii]) {
+				er++;
+				er %= 128;
+				}
+			else ii++;
+			}
+    win[i] = er;
     }
 	if(minpane==0){
     if(win[0]==64) win[0]=0;
@@ -823,7 +839,16 @@ for(uint8_t j = 0;j<128;j++){ // read from all windows
     Serial.print('R');
     }
   for(uint8_t i=minpane;i<7;i++){
-    win[i] = (i+j)%128;
+		er=(i+j)%128;
+		uint8_t ii=0;
+		while(ii<minpane){
+			if(er==win[ii]) {
+				er++;
+				er %= 128;
+				}
+			else ii++;
+			}
+    win[i] = er;
     }
 	if(minpane==0){
     if(win[0]==64) win[0]=0;
@@ -921,7 +946,9 @@ if(errormsgs||(result>0)){
       }
     Serial.print("\nFailue Count(HEX) by Pane\n   ");
     for(uint8_t i=0;i<7;i++){
-      Serial.print("   ");
+      Serial.print("  ");
+			if(i<minpane)Serial.print("*"); // frozen by heap, not tested
+			else Serial.print(' ');
       Serial.print(i+1,DEC);
       Serial.print(' ');
       }
@@ -952,7 +979,7 @@ char repCh = 0;
 uint16_t res;
 do{
 if(millis()>timeout){
-  Serial.print("cmd> ");
+  Serial.print("\ncmd> ");
   timeout = millis()+300000;
  }
 if (Serial.available()){
